@@ -170,7 +170,7 @@ def symbol_bbox(sym):
 # --------------------------------------------------------------------------
 class Part:
     def __init__(self, ref, lib_id, value, footprint, nets, pos=None, rot=0.0,
-                 side="F", fp_anchor="origin", fields=None):
+                 side="F", fp_anchor="origin", fields=None, sch=None, group=None):
         """
         nets      : {pin_number: net_name or None(=no-connect)}. Pins not listed -> no-connect.
         footprint : "Lib:Name" or None (schematic-only part)
@@ -181,6 +181,7 @@ class Part:
         self.nets, self.pos, self.rot, self.side = nets, pos, rot, side
         self.fp_anchor = fp_anchor
         self.fields = fields or {}
+        self.sch, self.group = sch, group   # schematic position (mm) and functional block
         self.uuid = uid()
 
 
@@ -190,6 +191,7 @@ class Design:
         self.comments = list(comments)
         self.parts = []
         self.texts = []          # schematic notes: (x, y, text)
+        self.groups = []         # schematic blocks: [(key, title)]
 
     def add(self, *a, **k):
         p = Part(*a, **k)
@@ -222,71 +224,176 @@ def _snap(v, g=2.54):
     return round(v / g) * g
 
 
-def write_schematic(design, path, columns=None):
+POWER_SYMBOLS = {"GND": "power:GND", "+3V3": "power:+3V3"}   # nets drawn as power symbols
+STUB = 2.54
+
+
+def _label_len(text):
+    return 1.27 * 0.95 * len(text) + 3.0
+
+
+def write_schematic(design, path):
+    """
+    Readable schematic: parts are placed at Part.sch (symbol origin, mm on an A3 sheet)
+    and grouped by Part.group into titled boxes (design.groups = [(key, title)]).
+    Every connected pin gets a short wire stub ending in a global label, or in a
+    power symbol for GND / +3V3. Unused pins get a no-connect flag.
+    """
+    import math
     root_uuid = uid()
     lib_syms, used = [], {}
-    for p in design.parts:
-        if p.lib_id not in used:
-            used[p.lib_id] = get_symbol(p.lib_id)
-            lib_syms.append(used[p.lib_id])
 
-    body = []
-    # ---- simple column layout: parts flow top->bottom, left->right
-    x0, y0 = 30.48, 35.56
-    col_x, cur_y, col_w = x0, y0, 0.0
-    max_y = 180.0
-    for p in design.parts:
-        sym = used[p.lib_id]
-        bx0, by0, bx1, by1 = symbol_bbox(sym)
-        h = (by1 - by0) + 12.7
-        w = (bx1 - bx0) + 45.0
-        if cur_y + h > max_y and cur_y > y0:
-            col_x += col_w
-            cur_y, col_w = y0, 0.0
-        sx = _snap(col_x - bx0 + 20.32)
-        sy = _snap(cur_y + by1 + 5.08)
-        p._sch_at = (sx, sy)
-        cur_y += h
-        col_w = max(col_w, w)
+    def use(lib_id):
+        if lib_id not in used:
+            used[lib_id] = get_symbol(lib_id)
+            lib_syms.append(used[lib_id])
+        return used[lib_id]
 
-        pins = symbol_pins(sym)
-        inst = ["symbol", ["lib_id", Q(p.lib_id)], ["at", _f(sx), _f(sy), "0"], ["unit", "1"],
-                ["exclude_from_sim", "no"], ["in_bom", "no" if p.lib_id.startswith("Mechanical:") else "yes"],
-                ["on_board", "yes" if p.footprint else "no"], ["dnp", "no"], ["uuid", Q(p.uuid)]]
-        vertical = pins and all(int(a) in (90, 270) for *_, a in pins)
-        if vertical:   # two-terminal vertical parts (C, R): fields to the right
-            r = _prop("Reference", p.ref, sx + 3.81, sy - 1.27); r[-1].append(["justify", "left"])
-            v = _prop("Value", p.value, sx + 3.81, sy + 1.27); v[-1].append(["justify", "left"])
-            inst += [r, v]
-        else:
-            inst.append(_prop("Reference", p.ref, sx, sy + by0 - 2.54 if pins else sy - 3.81))
-            inst.append(_prop("Value", p.value, sx, sy - by0 + 2.54 if pins else sy + 3.81))
-        inst.append(_prop("Footprint", p.footprint or "", sx, sy, hide=True))
-        inst.append(_prop("Datasheet", p.fields.get("Datasheet", "~"), sx, sy, hide=True))
-        for k, v in p.fields.items():
-            if k != "Datasheet":
-                inst.append(_prop(k, v, sx, sy, hide=True))
-        for num, _, _, _, _ in pins:
+    def instance(lib_id, ref, value, x, y, rot, props, in_bom=True, on_board=True, u=None):
+        sym = use(lib_id)
+        inst = ["symbol", ["lib_id", Q(lib_id)], ["at", _f(x), _f(y), str(int(rot))], ["unit", "1"],
+                ["exclude_from_sim", "no"], ["in_bom", "yes" if in_bom else "no"],
+                ["on_board", "yes" if on_board else "no"], ["dnp", "no"], ["uuid", Q(u or uid())]]
+        inst += props
+        for num, *_ in symbol_pins(sym):
             inst.append(["pin", Q(num), ["uuid", Q(uid())]])
         inst.append(["instances", ["project", Q(design.name),
-                                   ["path", Q("/" + root_uuid), ["reference", Q(p.ref)], ["unit", "1"]]]])
-        body.append(inst)
+                                   ["path", Q("/" + root_uuid), ["reference", Q(ref)], ["unit", "1"]]]])
+        return inst
+
+    body, boxes = [], {}
+    pwr_n = [0]
+    flagged = set()
+
+    def grow(group, x, y):
+        b = boxes.setdefault(group, [x, y, x, y])
+        b[0], b[1], b[2], b[3] = min(b[0], x), min(b[1], y), max(b[2], x), max(b[3], y)
+
+    def power_symbol(net, x, y, rot, group):
+        pwr_n[0] += 1
+        # unit vector from the pin toward the symbol body, for each rotation (KiCad rotates CCW)
+        body_dir = {0: (0, 1), 90: (1, 0), 180: (0, -1), 270: (-1, 0)}
+        if net != "GND":
+            body_dir = {r: (-v[0], -v[1]) for r, v in body_dir.items()}
+        bx, by = body_dir[rot]
+        # value text centred just beyond the symbol (justification would flip with rotation)
+        vx, vy = x + bx * (4.0 + 0.6 * len(net)), y + by * 4.0
+        val = _prop("Value", net, vx, vy, angle=90 if bx else 0)   # fields rotate with the symbol
+        body.append(instance(POWER_SYMBOLS[net], "#PWR%02d" % pwr_n[0], net, x, y, rot,
+                             [_prop("Reference", "#PWR%02d" % pwr_n[0], x, y, hide=True), val,
+                              _prop("Footprint", "", x, y, hide=True), _prop("Datasheet", "~", x, y, hide=True)],
+                             in_bom=False, on_board=False))
+        L = _label_len(net) if bx else 3
+        grow(group, x - 3 + min(0, bx * (4.5 + L)), y - 3 + min(0, by * 6))
+        grow(group, x + 3 + max(0, bx * (4.5 + L)), y + 3 + max(0, by * 6))
+
+    def power(net, x, y, d, group):
+        # d = stub direction (unit vector, schematic coords): the symbol body continues along it
+        if net == "GND":
+            rot = {(0, 1): 0, (1, 0): 90, (0, -1): 180, (-1, 0): 270}[d]
+        else:
+            rot = {(0, -1): 0, (-1, 0): 90, (0, 1): 180, (1, 0): 270}[d]
+        power_symbol(net, x, y, rot, group)
+    # auto-place anything without an explicit position, below the sheet content
+    auto_x = 30.48
+    for p in design.parts:
+        if getattr(p, "sch", None) is None:
+            p.sch = (auto_x, 270.0); auto_x += 25.4
+
+    for p in design.parts:
+        sym = use(p.lib_id)
+        group = getattr(p, "group", None) or "_misc"
+        sx, sy = _snap(p.sch[0]), _snap(p.sch[1])
+        bx0, by0, bx1, by1 = symbol_bbox(sym)
+        pins = symbol_pins(sym)
+        grow(group, sx + bx0, sy - by1); grow(group, sx + bx1, sy - by0)
+        vertical = pins and all(int(a) in (90, 270) for *_, a in pins)
+        if vertical:
+            r = _prop("Reference", p.ref, sx + 3.81, sy - 1.27); r[-1].append(["justify", "left"])
+            v = _prop("Value", p.value, sx + 3.81, sy + 1.27); v[-1].append(["justify", "left"])
+            fields = [r, v]
+            grow(group, sx + 3.81 + _label_len(p.value), sy)
+        elif not pins:
+            fields = [_prop("Reference", p.ref, sx, sy - 3.81), _prop("Value", p.value, sx, sy + 3.81)]
+            grow(group, sx - _label_len(p.value) / 2, sy + 4); grow(group, sx + _label_len(p.value) / 2, sy - 4)
+        else:
+            # use the library symbol's own Reference/Value placement (it clears the body graphics)
+            fields = []
+            for key, text in (("Reference", p.ref), ("Value", p.value)):
+                lp = next(x for x in find_all(sym, "property") if x[1] == key)
+                at = find(lp, "at")
+                fx, fy = sx + float(at[1]), sy - float(at[2])
+                f = _prop(key, text, fx, fy, angle=int(float(at[3])) if len(at) > 3 else 0)
+                eff = find(lp, "effects")
+                j = find(eff, "justify") if eff else None
+                if j:
+                    f[-1].append(list(j))
+                fields.append(f)
+                grow(group, fx - _label_len(text) / 2, fy - 1.5); grow(group, fx + _label_len(text) / 2, fy + 1.5)
+        fields.append(_prop("Footprint", p.footprint or "", sx, sy, hide=True))
+        fields.append(_prop("Datasheet", p.fields.get("Datasheet", "~"), sx, sy, hide=True))
+        for k, v in p.fields.items():
+            if k != "Datasheet":
+                fields.append(_prop(k, v, sx, sy, hide=True))
+        body.append(instance(p.lib_id, p.ref, p.value, sx, sy, 0, fields,
+                             in_bom=not p.lib_id.startswith("Mechanical:"), on_board=bool(p.footprint),
+                             u=p.uuid))
 
         for num, name, px, py, ang in pins:
             ax, ay = sx + px, sy - py
             net = p.nets.get(num)
-            if net:
-                la = (ang + 180) % 360
-                just = "left" if la in (0, 90) else "right"
-                body.append(["global_label", Q(net), ["shape", "passive"],
-                             ["at", _f(ax), _f(ay), str(int(la))], ["fields_autoplaced", "yes"],
-                             ["effects", ["font", ["size", "1.27", "1.27"]], ["justify", just]],
-                             ["uuid", Q(uid())],
-                             ["property", Q("Intersheetrefs"), Q("${INTERSHEET_REFS}"),
-                              ["at", _f(ax), _f(ay), "0"],
-                              ["effects", ["font", ["size", "1.27", "1.27"]], ["hide", "yes"]]]])
-            else:
+            if not net:
                 body.append(["no_connect", ["at", _f(ax), _f(ay)], ["uuid", Q(uid())]])
+                continue
+            a = math.radians(ang)
+            d = (round(-math.cos(a)), round(math.sin(a)))
+            ex, ey = ax + STUB * d[0], ay + STUB * d[1]
+            body.append(["wire", ["pts", ["xy", _f(ax), _f(ay)], ["xy", _f(ex), _f(ey)]],
+                         ["stroke", ["width", "0"], ["type", "default"]], ["uuid", Q(uid())]])
+            if net in POWER_SYMBOLS:
+                power(net, ex, ey, d, group)
+                continue
+            la = int((ang + 180) % 360)
+            just = "left" if la in (0, 90) else "right"
+            body.append(["global_label", Q(net), ["shape", "passive"],
+                         ["at", _f(ex), _f(ey), str(la)], ["fields_autoplaced", "yes"],
+                         ["effects", ["font", ["size", "1.27", "1.27"]], ["justify", just]],
+                         ["uuid", Q(uid())],
+                         ["property", Q("Intersheetrefs"), Q("${INTERSHEET_REFS}"),
+                          ["at", _f(ex), _f(ey), "0"],
+                          ["effects", ["font", ["size", "1.27", "1.27"]], ["hide", "yes"]]]])
+            L = _label_len(net)
+            grow(group, ex + L * d[0], ey + L * d[1] - 1.5); grow(group, ex + L * d[0], ey + L * d[1] + 1.5)
+
+    fx, fy = getattr(design, "flag_pos", (30.48, 30.48))
+    fgroup = getattr(design, "flag_group", "_misc")
+    for i, net in enumerate(sorted(n for n in POWER_SYMBOLS if any(net == n for p in design.parts for net in p.nets.values()))):
+        x, y = _snap(fx + 15.24 * i), _snap(fy)
+        power_symbol(net, x, y, 0, fgroup)
+        frot = 0 if net == "GND" else 180
+        body.append(instance("power:PWR_FLAG", "#FLG%02d" % (i + 1), "PWR_FLAG", x, y, frot,
+                             [_prop("Reference", "#FLG%02d" % (i + 1), x, y, hide=True),
+                              _prop("Value", "PWR_FLAG", x, y + (-5.08 if frot == 0 else 5.08)),
+                              _prop("Footprint", "", x, y, hide=True), _prop("Datasheet", "~", x, y, hide=True)],
+                             in_bom=False, on_board=False))
+        grow(fgroup, x - 6, y - 7); grow(fgroup, x + 6, y + 7)
+
+    # group boxes with titles
+    titles = dict(getattr(design, "groups", []))
+    for key, (x0, y0, x1, y1) in boxes.items():
+        if key == "_misc":
+            continue
+        m = 3.81
+        x0, y0, x1, y1 = x0 - m, y0 - m - 2.54, x1 + m, y1 + m
+        x1 = max(x1, x0 + 2.0 * 0.95 * len(titles.get(key, key)) + 3.0)    # fit the title
+        body.append(["rectangle", ["start", _f(x0), _f(y0)], ["end", _f(x1), _f(y1)],
+                     ["stroke", ["width", "0"], ["type", "dash"]], ["fill", ["type", "none"]],
+                     ["uuid", Q(uid())]])
+        body.append(["text", Q(titles.get(key, key)), ["exclude_from_sim", "no"],
+                     ["at", _f(x0 + 1.27), _f(y0 + 1.27), "0"],
+                     ["effects", ["font", ["size", "2", "2"], ["thickness", "0.4"], ["bold", "yes"]],
+                      ["justify", "left", "top"]],
+                     ["uuid", Q(uid())]])
 
     for (tx, ty, text) in design.texts:
         body.append(["text", Q(text), ["exclude_from_sim", "no"], ["at", _f(tx), _f(ty), "0"],
@@ -302,6 +409,12 @@ def write_schematic(design, path, columns=None):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(dump_sexpr(doc) + "\n")
     return root_uuid
+
+
+def write_sym_lib_table(project_dir):
+    with open(os.path.join(project_dir, "sym-lib-table"), "w", encoding="utf-8", newline="\n") as f:
+        f.write('(sym_lib_table\n\t(version 7)\n'
+                '\t(lib (name "Peeling") (type "KiCad") (uri "${KIPRJMOD}/../lib/Peeling.kicad_sym") (options "") (descr "Peeling instrument project symbols"))\n)\n')
 
 
 # --------------------------------------------------------------------------
@@ -368,7 +481,7 @@ def build_pcb(design, path, outline, origin=(100.0, 50.0), zones=True, corner_ra
         for num, name, _, _, _ in symbol_pins(get_symbol(p.lib_id)):
             if not p.nets.get(num):
                 label = ("%s-%s-Pad%s" % (p.ref, name, num)) if name not in ("~", "") else ("%s-Pad%s" % (p.ref, num))
-                p._pad_nets[num] = "unconnected-(%s)" % label
+                p._pad_nets[num] = "unconnected-(%s)" % label.replace("/", "{slash}")
 
     nets = {}
     all_nets = sorted({n for p in design.parts for n in p._pad_nets.values() if n})

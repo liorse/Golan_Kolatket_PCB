@@ -15,11 +15,13 @@ All coordinates are in mm from the board's top-left corner, viewed from the top.
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kigen
+import peeling_lib
 from link_pinout import LINK_A, LINK_B
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Main_Board")
 NAME = "Main_Board"
 
+peeling_lib.ensure()
 d = kigen.Design(NAME, "Peeling Instrument - Main Board", rev="A",
                  company="Weizmann Institute",
                  comments=["ESP32 DevKit V1 (30-pin) + Adafruit MAX31856 + D4184 dual-MOSFET module",
@@ -30,52 +32,62 @@ BOARD_W, BOARD_H = 97.0, 95.0
 PH = "Connector_Phoenix_MC:PhoenixContact_MC_1,5_%d-G-3.81_1x%02d_P3.81mm_Horizontal"
 SOCK = "Connector_PinSocket_2.54mm:PinSocket_%s_P2.54mm_Vertical"
 
+# Schematic blocks (titled boxes on the sheet)
+d.groups = [("pwr", "POWER INPUT  6-7 V from the off-board buck"),
+            ("mcu", "ESP32 DevKit V1 (30-pin, in sockets)"),
+            ("boot", "BOOT CAPACITOR (plug-in)"),
+            ("tc", "THERMOCOUPLE  MAX31856 breakout"),
+            ("heat", "HEATER  HW-517 MOSFET module"),
+            ("step", "STEPPER DRIVER  DM542T"),
+            ("lim", "LIMIT SWITCHES"),
+            ("link", "FRONT-PANEL LINK"),
+            ("mech", "MECHANICAL")]
+d.flag_pos, d.flag_group = (91.44, 53.34), "pwr"      # PWR_FLAGs for GND / +3V3 (ERC)
+
 # ---- Field terminals along the top edge (rot 180: pin 1 right-most, plug enters from the top)
 TOP_Y = 8.3
-TERMS = [("J1", "POWER_IN_6-7V", {"1": "+VIN", "2": "GND"}, 15.0, ["+VIN", "GND"]),
+TERMS = [("J1", "POWER_IN_6-7V", {"1": "+VIN", "2": "GND"}, 15.0, ["+VIN", "GND"], "pwr", (60.96, 50.8)),
          ("J2", "DM542T", {"1": "STEP_PUL", "2": "STEP_DIR", "3": "STEP_ENA", "4": "GND"}, 42.0,
-          ["PUL+", "DIR+", "ENA+", "GND"]),
+          ["PUL+", "DIR+", "ENA+", "GND"], "step", (358.14, 50.8)),
          ("J3", "LIMIT_SW", {"1": "LIMIT_X", "2": "GND", "3": "LIMIT_Y", "4": "GND"}, 68.0,
-          ["LIM X", "GND", "LIM Y", "GND"])]
-for ref, val, nets, x, _ in TERMS:
+          ["LIM X", "GND", "LIM Y", "GND"], "lim", (358.14, 91.44))]
+for ref, val, nets, x, _, grp, sch in TERMS:
     n = len(nets)
-    d.add(ref, "Connector_Generic:Conn_01x%02d" % n, val, PH % (n, n), nets, pos=(x, TOP_Y), rot=180)
+    d.add(ref, "Connector_Generic:Conn_01x%02d" % n, val, PH % (n, n), nets, pos=(x, TOP_Y), rot=180,
+          sch=sch, group=grp)
 
 # ---- Front-panel link along the bottom edge (rot 0: pin 1 left-most, plug enters from below)
 # Pin-for-pin with Front_Panel J1 (LINK_A) / J2 (LINK_B): wire 1-1, 2-2, ... 8-8.
 BOT_Y = BOARD_H - 8.3
-d.add("J4", "Connector_Generic:Conn_01x08", "LINK_A", PH % (8, 8), LINK_A, pos=(25.0, BOT_Y), rot=0)
-d.add("J5", "Connector_Generic:Conn_01x08", "LINK_B", PH % (8, 8), LINK_B, pos=(58.5, BOT_Y), rot=0)
+d.add("J4", "Connector_Generic:Conn_01x08", "LINK_A", PH % (8, 8), LINK_A, pos=(25.0, BOT_Y), rot=0,
+      sch=(358.14, 137.16), group="link")
+d.add("J5", "Connector_Generic:Conn_01x08", "LINK_B", PH % (8, 8), LINK_B, pos=(58.5, BOT_Y), rot=0,
+      sch=(358.14, 172.72), group="link")
 
-# ---- ESP32 DevKit V1, 30-pin, rows 25.4 mm apart. Mounted with USB toward the left edge.
-# Pin 1 (EN / D23, antenna end) on the right, pin 15 (VIN / 3V3, USB end) on the left.
-ESP_X1, ESP_Y = 49.56, 29.0          # pin 1 of the top row
-ESP_L = {"1": None,  "2": None, "3": None, "4": None, "5": None,                 # EN VP VN D34 D35
-         "6": "HEATER_PWM", "7": "BTN_B", "8": "STEP_DIR", "9": "STEP_ENA",       # D32 D33 D25 D26
-         "10": "STEP_PUL", "11": "BTN_X", "12": "BTN_Y", "13": "LIMIT_X",         # D27 D14 D12 D13
-         "14": "GND", "15": "+VIN"}                                               # GND VIN
-ESP_R = {"1": "SPI_MOSI", "2": "TC_DRDY", "3": None, "4": None,                   # D23 D22 TX0 RX0
-         "5": "TC_CS", "6": "SPI_MISO", "7": "SPI_SCK", "8": "TFT_CS",            # D21 D19 D18 D5
-         "9": "TFT_DC", "10": "TFT_BL", "11": "BTN_A", "12": "TFT_RST",           # TX2=17 RX2=16 D4 D2
-         "13": "LIMIT_Y", "14": "GND", "15": "+3V3"}                              # D15 GND 3V3
-d.add("J6", "Connector_Generic:Conn_01x15", "ESP32_DevKit_EN-VIN", SOCK % "1x15", ESP_L,
-      pos=(ESP_X1, ESP_Y), rot=270,
-      fields={"Description": "ESP32 DevKit V1 30-pin, row EN,VP,VN,D34,D35,D32,D33,D25,D26,D27,D14,D12,D13,GND,VIN"})
-d.add("J7", "Connector_Generic:Conn_01x15", "ESP32_DevKit_D23-3V3", SOCK % "1x15", ESP_R,
-      pos=(ESP_X1, ESP_Y + 25.4), rot=270,
-      fields={"Description": "ESP32 DevKit V1 30-pin, row D23,D22,TX0,RX0,D21,D19,D18,D5,TX2,RX2,D4,D2,D15,GND,3V3"})
+# ---- ESP32 DevKit V1, 30-pin, rows 25.4 mm apart, in two 1x15 female sockets (one footprint).
+# Mounted with USB toward the left edge: pins 1 (EN) and 16 (D23) at the antenna end, on the right.
+ESP_X1, ESP_Y = 49.56, 29.0          # pad 1 (EN); the D23..3V3 row is 25.4 mm lower
+ESP_NETS = {"1": "ESP_EN", "6": "HEATER_PWM", "7": "BTN_B", "8": "STEP_DIR", "9": "STEP_ENA",   # EN D32 D33 D25 D26
+            "10": "STEP_PUL", "11": "BTN_X", "12": "BTN_Y", "13": "LIMIT_X",                   # D27 D14 D12 D13
+            "14": "GND", "15": "+VIN",                                                          # GND VIN
+            "16": "SPI_MOSI", "17": "TC_DRDY", "20": "TC_CS", "21": "SPI_MISO",                 # D23 D22 D21 D19
+            "22": "SPI_SCK", "23": "TFT_CS", "24": "TFT_DC", "25": "TFT_BL",                    # D18 D5 IO17 IO16
+            "26": "BTN_A", "27": "TFT_RST", "28": "LIMIT_Y", "29": "GND", "30": "+3V3"}         # D4 D2 D15 GND 3V3
+d.add("U1", "Peeling:ESP32_DevKit_V1_30pin", "ESP32_DevKit_V1_30pin",
+      "Peeling:ESP32_DevKit_V1_30pin_Socket", ESP_NETS, pos=(ESP_X1, ESP_Y), rot=270,
+      sch=(162.56, 99.06), group="mcu")
 
 # ---- Adafruit MAX31856 breakout (24.13 x 21.59 mm), rotated so its thermocouple
 # terminal faces the right board edge. Header: VIN 3Vo GND SCK SDO SDI CS FLT DRDY.
 MX, MY = 70.0, 25.0                  # breakout top-left on the board (after rotation)
-d.add("J8", "Connector_Generic:Conn_01x09", "MAX31856_breakout", SOCK % "1x09",
+d.add("U2", "Peeling:Adafruit_MAX31856_Breakout", "Adafruit_MAX31856", SOCK % "1x09",
       {"1": "+3V3", "3": "GND", "4": "SPI_SCK", "5": "SPI_MISO", "6": "SPI_MOSI",
        "7": "TC_CS", "9": "TC_DRDY"},
-      pos=(MX + 2.54, MY + 1.905), rot=0,
-      fields={"Description": "Adafruit 3263 MAX31856: VIN,3Vo,GND,SCK,SDO,SDI,CS,FLT,DRDY"})
-for i, (hx, hy) in enumerate([(19.18, 2.54), (19.18, 21.59)], 5):
+      pos=(MX + 2.54, MY + 1.905), rot=0, sch=(264.16, 63.5), group="tc")
+for i, (hx, hy, sy) in enumerate([(19.18, 2.54, 55.88), (19.18, 21.59, 71.12)], 5):
     d.add("H%d" % i, "Mechanical:MountingHole", "MAX31856_standoff",
-          "MountingHole:MountingHole_2.7mm_M2.5", {}, pos=(MX + hx, MY + hy))
+          "MountingHole:MountingHole_2.7mm_M2.5", {}, pos=(MX + hx, MY + hy),
+          sch=(289.56, sy), group="tc")
 
 # ---- HW-517 / D4184 dual-MOSFET module (33.8 x 16.9 mm), plugged by its J1 row of four
 # 2.54 mm pins. Top view, J1 toward you: TRIG/PWM, TRIG/PWM, GND, GND (left to right).
@@ -85,21 +97,33 @@ for i, (hx, hy) in enumerate([(19.18, 2.54), (19.18, 21.59)], 5):
 MOS_L, MOS_W, MOS_OVER = 33.8, 16.9, 13.0
 MOS_X, MOS_Y = -MOS_OVER, 65.0       # module outline top-left (x < 0 = beyond the board edge)
 MOS_PIN_X, MOS_PIN_Y = MOS_X + MOS_L - 4.5, MOS_Y + 4.64
-d.add("J9", "Connector_Generic:Conn_01x04", "MOSFET_module_J1", SOCK % "1x04",
+d.add("U3", "Peeling:HW-517_MOSFET_Module", "HW-517_MOSFET", SOCK % "1x04",
       {"1": "GND", "2": "GND", "3": "HEATER_PWM", "4": "HEATER_PWM"},
-      pos=(MOS_PIN_X, MOS_PIN_Y), rot=0,
-      fields={"Description": "HW-517 D4184 dual-MOSFET module J1: TRIG/PWM, TRIG/PWM, GND, GND"})
+      pos=(MOS_PIN_X, MOS_PIN_Y), rot=0, sch=(264.16, 116.84), group="heat")
+
+# ---- EN-to-GND capacitor: delays the ESP32 reset release at power-up so it boots reliably
+# (same fix as on the prototype breadboard). Electrolytic: + to EN, - to GND.
+# The capacitor plugs into a 2-pin socket (like on the breadboard); C1 itself is schematic-only.
+CAP_X, CAP_Y = 61.0, 52.0
+d.add("J10", "Connector_Generic:Conn_01x02", "EN_CAP_socket", SOCK % "1x02",
+      {"1": "ESP_EN", "2": "GND"}, pos=(CAP_X, CAP_Y), rot=0,
+      fields={"Description": "Socket for the EN boot capacitor: pin 1 = + (EN), pin 2 = - (GND)"},
+      sch=(60.96, 91.44), group="boot")
+d.add("C1", "Device:C_Polarized", "10uF", None, {"1": "ESP_EN", "2": "GND"},
+      fields={"Description": "ESP32 EN boot-delay electrolytic, user-supplied, plugs into J10"},
+      sch=(83.82, 93.98), group="boot")
+
 # ---- Board mounting holes
 for i, (hx, hy) in enumerate([(4.0, 4.0), (BOARD_W - 4.0, 4.0), (4.0, 91.0), (BOARD_W - 4.0, 91.0)], 1):
     d.add("H%d" % i, "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {},
-          pos=(hx, hy))
-
-d.texts.append((30.48, 220.0,
+          pos=(hx, hy), sch=(40.64 + 15.24 * (i - 1), 147.32), group="mech")
+d.texts.append((30.48, 172.72,
                 "Power: 6-7 V from the off-board LM2596 buck enters at J1 and feeds the ESP32 DevKit VIN;\n"
                 "the DevKit's own regulator supplies +3V3 to the MAX31856 and the front panel.\n"
                 "24 V does not enter this board: the PSU feeds the DM542T directly, and the 24 V supply and\n"
                 "heater connect to the MOSFET module's own screw terminals (VIN+/VIN-, OUT+/OUT-).\n"
-                "J9: the module's J1 row (TRIG/PWM x2, GND x2) plugs in directly.\n"
+                "U3: the module's J1 row (TRIG/PWM x2, GND x2) plugs into a 1x4 female socket.\n"
+                "U1/U2/U3 are plug-in modules: their footprints are female sockets.\n"
                 "DM542T: PUL-/DIR-/ENA- go to GND at the driver; J2 carries PUL+, DIR+, ENA+ and GND."))
 
 if __name__ == "__main__":
@@ -111,6 +135,7 @@ if __name__ == "__main__":
                          "Power": dict(track_width=0.6, clearance=0.25)},
                         [("+VIN", "Power"), ("+3V3", "Power"), ("GND", "Power"), ("TFT_BL", "Power")])
     kigen.write_fp_lib_table(OUT)
+    kigen.write_sym_lib_table(OUT)
     kigen.write_schematic(d, base + ".kicad_sch")
 
     S = pcbnew.F_SilkS
@@ -122,7 +147,7 @@ if __name__ == "__main__":
              (3.0, MOS_Y + MOS_W / 2, "HW-517 MOSFET", 0.9, S, 90),
              (10.5, MOS_Y - 1.6, "24V/heater <- off edge", 0.8, S),
              (MOS_PIN_X, MOS_PIN_Y + 10.4, "J1", 0.8, S)]
-    for ref, val, nets, x, labels in TERMS:              # pin labels under the top terminals
+    for ref, val, nets, x, labels, _, _ in TERMS:              # pin labels under the top terminals
         for i, lab in enumerate(labels):
             texts.append((x - 3.81 * i, 13.0, lab, 0.8, S))
         texts.append((x - 3.81 * (len(labels) - 1) / 2.0, 15.0, val, 1.0, S))
@@ -130,20 +155,23 @@ if __name__ == "__main__":
     def net_of(ref, pin):
         return next(p for p in d.parts if p.ref == ref).nets.get(pin)
     # ESP32 sockets: connected net beside every used pin, outside the module so it stays visible
-    for ref, y, just, anchor in (("J6", ESP_Y, "left", ESP_Y - 2.2), ("J7", ESP_Y + 25.4, "right", ESP_Y + 27.5)):
-        for i in range(1, 16):
-            n = net_of(ref, str(i))
+    for first, anchor, just in ((1, ESP_Y - 2.2, "left"), (16, ESP_Y + 27.5, "right")):
+        for i in range(15):
+            n = net_of("U1", str(first + i))
             if n:
-                texts.append((ESP_X1 - 2.54 * (i - 1), anchor, n, 0.8, S, 90, just))
+                texts.append((ESP_X1 - 2.54 * i, anchor, n, 0.8, S, 90, just))
     # MAX31856 socket: labels to the left of the header
     for i in range(1, 10):
-        n = net_of("J8", str(i))
+        n = net_of("U2", str(i))
         if n:
             texts.append((MX - 0.6, MY + 1.905 + 2.54 * (i - 1), n, 0.8, S, 0, "right"))
     # Front-panel link terminals: vertical labels above each pin
     for ref, x0, pins in (("J4", 25.0, LINK_A), ("J5", 58.5, LINK_B)):
         for i in range(1, 9):
             texts.append((x0 + 3.81 * (i - 1), BOT_Y - 2.9, pins[str(i)], 0.8, S, 90, "left"))
+    texts += [(CAP_X + 1.9, CAP_Y, "+ EN", 0.8, S, 0, "left"),
+              (CAP_X + 1.9, CAP_Y + 2.54, "- GND", 0.8, S, 0, "left"),
+              (CAP_X + 1.0, CAP_Y + 5.0, "BOOT CAP", 0.8, S)]
     # MOSFET module J1: the module's own pin names
     for i, lab in enumerate(["GND", "GND", "TRIG/PWM", "TRIG/PWM"]):
         texts.append((MOS_PIN_X - 1.9, MOS_PIN_Y + 2.54 * i, lab, 0.8, S, 0, "right"))
