@@ -459,7 +459,7 @@ def write_project(design, path, netclasses, patterns):
     with open(os.path.splitext(path)[0] + ".kicad_dru", "w", encoding="utf-8", newline="\n") as f:
         f.write("(version 1)\n"
                 "(rule \"GND thermal spokes\"\n"
-                "\t(condition \"A.NetName == 'GND'\")\n"
+                "\t(condition \"A.Type == 'Pad'\")\n"
                 "\t(constraint min_resolved_spokes (min 1)))\n")
 
 

@@ -47,36 +47,74 @@ def stitch_gnd(board, pitch=7.5, via_d=0.8, drill=0.4, clearance=0.35, edge=2.0)
     x0, y0, x1, y1 = bb.GetX() + mm(edge), bb.GetY() + mm(edge), bb.GetRight() - mm(edge), bb.GetBottom() - mm(edge)
     obstacles = [p for p in board.GetPads()] + [t for t in board.GetTracks()]
     keep = mm(via_d / 2 + clearance)
-    n, y = 0, y0
+
+    def clear(pt):
+        seg = pcbnew.SEG(pt, pt)
+        if not (x0 <= pt.x <= x1 and y0 <= pt.y <= y1):
+            return False
+        for o in obstacles:
+            for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
+                if o.IsOnLayer(layer) and o.GetEffectiveShape(layer).Collide(seg, keep):
+                    return False
+            if isinstance(o, pcbnew.PAD) and o.HasHole():
+                r = max(o.GetDrillSize().x, o.GetDrillSize().y) / 2
+                if (o.GetPosition() - pt).EuclideanNorm() < r + keep + mm(0.25):
+                    return False
+        return True
+
+    def add_via(pt):
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(pt); v.SetWidth(mm(via_d)); v.SetDrill(mm(drill)); v.SetNet(gnd)
+        board.Add(v); obstacles.append(v)
+
+    # one via beside every through-hole GND pad, so its local pour patch reaches the other layer
+    import math
+    n = 0
+    for pad in list(board.GetPads()):
+        if pad.GetNetCode() != gnd.GetNetCode() or not pad.HasHole():
+            continue
+        c = pad.GetPosition()
+        for rr in (2.4, 3.0, 3.6, 4.2, 5.0, 6.0):
+            done = False
+            for a in range(0, 360, 15):
+                pt = pcbnew.VECTOR2I(int(c.x + mm(rr) * math.cos(math.radians(a))),
+                                     int(c.y + mm(rr) * math.sin(math.radians(a))))
+                if clear(pt):
+                    add_via(pt); n += 1; done = True
+                    break
+            if done:
+                break
+    y = y0
     while y <= y1:
         x = x0
         while x <= x1:
             pt = pcbnew.VECTOR2I(int(x), int(y))
-            seg = pcbnew.SEG(pt, pt)
-            hit = False
-            for o in obstacles:
-                # copper on either layer (any net) needs full clearance
-                for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
-                    if o.IsOnLayer(layer) and o.GetEffectiveShape(layer).Collide(seg, keep):
-                        hit = True
-                        break
-                # drill holes too (mounting holes have no copper)
-                if not hit and isinstance(o, pcbnew.PAD) and o.HasHole():
-                    r = max(o.GetDrillSize().x, o.GetDrillSize().y) / 2
-                    if (o.GetPosition() - pt).EuclideanNorm() < r + keep + mm(0.25):
-                        hit = True
-                if hit:
-                    break
-            if not hit:
-                v = pcbnew.PCB_VIA(board)
-                v.SetPosition(pt); v.SetWidth(mm(via_d)); v.SetDrill(mm(drill)); v.SetNet(gnd)
-                board.Add(v); obstacles.append(v); n += 1
+            if clear(pt):
+                add_via(pt); n += 1
             x += mm(pitch)
         y += mm(pitch)
     return n
 
 
-print("GND stitching vias:", stitch_gnd(board))
+def prune_stitching(board, vias):
+    """Remove stitching vias that do not land in the filled GND pour on both layers."""
+    gnd_zones = [z for z in board.Zones() if z.GetNetname() == "GND"]
+    removed = 0
+    for v in vias:
+        pos = v.GetPosition()
+        ok = all(any(z.IsOnLayer(l) and z.HitTestFilledArea(l, pos) for z in gnd_zones)
+                 for l in (pcbnew.F_Cu, pcbnew.B_Cu))
+        if not ok:
+            board.Remove(v); removed += 1
+    return removed
+
+
+before = {id(t) for t in board.GetTracks()}
+n = stitch_gnd(board)
+stitch = [t for t in board.GetTracks() if isinstance(t, pcbnew.PCB_VIA) and t.GetNetname() == "GND"
+          and t.GetWidth(pcbnew.F_Cu) == pcbnew.FromMM(0.8) and t.GetDrillValue() == pcbnew.FromMM(0.4)]
+pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+print("GND stitching vias: %d placed, %d removed (outside the pour)" % (n, prune_stitching(board, stitch)))
 pcbnew.ZONE_FILLER(board).Fill(board.Zones())
 board.Save(pcb)
 for f in (dsn, ses):
