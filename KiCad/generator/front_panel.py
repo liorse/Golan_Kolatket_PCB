@@ -69,10 +69,14 @@ for i, (hx, hy) in enumerate([(4.96, 3.0), (81.04, 3.0), (4.96, 47.0), (81.04, 4
 # The switches themselves (SW1-SW4) are schematic-only: they arrive on the breakouts.
 # Screen labels: A top-left, B bottom-left, X top-right, Y bottom-right.
 SOCK4 = "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical"
-KEYS = [("SW1", "BTN_A", "A_START_STOP", (15.0, 30.0)),
-        ("SW2", "BTN_B", "B_SET_HOME", (15.0, 60.0)),
-        ("SW3", "BTN_X", "X_PLUS_CAL", (135.0, 30.0)),
-        ("SW4", "BTN_Y", "Y_MINUS", (135.0, 60.0))]
+# Key rows aligned with the display module: top edge of the upper breakouts = top of the display
+# PCB, bottom edge of the lower breakouts = bottom of the display PCB (breakouts are 19.05 mm square).
+KEY_HALF = 19.05 / 2
+KEY_TOP_Y, KEY_BOT_Y = DY + KEY_HALF, DY + 50.0 - KEY_HALF
+KEYS = [("SW1", "BTN_A", "A_START_STOP", (15.0, KEY_TOP_Y)),
+        ("SW2", "BTN_B", "B_SET_HOME", (15.0, KEY_BOT_Y)),
+        ("SW3", "BTN_X", "X_PLUS_CAL", (135.0, KEY_TOP_Y)),
+        ("SW4", "BTN_Y", "Y_MINUS", (135.0, KEY_BOT_Y))]
 key_silk = []
 jn = 5
 for k, (ref, net, val, (cx, cy)) in enumerate(KEYS):
