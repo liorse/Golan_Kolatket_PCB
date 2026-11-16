@@ -27,13 +27,15 @@ d.groups = [("link", "LINK TO MAIN BOARD"), ("disp", "DISPLAY  2.8in SPI TFT (MS
 d.flag_pos, d.flag_group = (40.64, 114.3), "link"      # PWR_FLAGs for GND / +3V3 (ERC)
 
 # ---- Board-to-board link (pluggable, plug enters from the top edge) -------------
-# Rotated 180 deg: pad 1 is the right-most pin, the body overhangs the top edge.
+# Mounted on the BACK (side "B"): headers are inserted from the back and soldered on the display side,
+# so the cables leave behind the panel. Body overhangs the top edge, plug enters from the top.
+# Seen from the front, pad 1 is the left-most pin.
 PH = "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_6-G-5,08_1x06_P5.08mm_Horizontal"
 P, TOP_Y = 5.08, 10.4
-LINK_X = (72.0, 108.0)                # pin 1 of J1 / J2 (right-most pin)
-d.add("J1", "Connector_Generic:Conn_01x06", "LINK_A", PH, LINK_A, pos=(LINK_X[0], TOP_Y), rot=180,
+LINK_X = (46.6, 82.6)                 # pin 1 of J1 / J2 (left-most pin seen from the front)
+d.add("J1", "Connector_Generic:Conn_01x06", "LINK_A", PH, LINK_A, pos=(LINK_X[0], TOP_Y), rot=0, side="B",
       sch=(60.96, 50.8), group="link")
-d.add("J2", "Connector_Generic:Conn_01x06", "LINK_B", PH, LINK_B, pos=(LINK_X[1], TOP_Y), rot=180,
+d.add("J2", "Connector_Generic:Conn_01x06", "LINK_B", PH, LINK_B, pos=(LINK_X[1], TOP_Y), rot=0, side="B",
       sch=(60.96, 83.82), group="link")
 
 # ---- Display ---------------------------------------------------------------------
@@ -73,8 +75,8 @@ SOCK4 = "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical"
 # PCB, bottom edge of the lower breakouts = bottom of the display PCB (breakouts are 19.05 mm square).
 KEY_HALF = 19.05 / 2
 KEY_TOP_Y, KEY_BOT_Y = DY + KEY_HALF, DY + 50.0 - KEY_HALF
-KEYS = [("SW1", "BTN_A", "A_START_STOP", (15.0, KEY_TOP_Y)),
-        ("SW2", "BTN_B", "B_SET_HOME", (15.0, KEY_BOT_Y)),
+KEYS = [("SW1", "BTN_A", "A_START_STOP", (18.0, KEY_TOP_Y)),
+        ("SW2", "BTN_B", "B_SET_HOME", (18.0, KEY_BOT_Y)),
         ("SW3", "BTN_X", "X_PLUS_CAL", (135.0, KEY_TOP_Y)),
         ("SW4", "BTN_Y", "Y_MINUS", (135.0, KEY_BOT_Y))]
 key_silk = []
@@ -116,15 +118,19 @@ if __name__ == "__main__":
     S = pcbnew.F_SilkS
     texts = [(75.0, 84.0, "PEELING INSTRUMENT - FRONT PANEL  rev A", 1.5, S),
              # link terminal titles, beside each terminal
-             (LINK_X[0] - 30.0, TOP_Y, "LINK_A\n<- main J4", 1.0, S, 0, "right"),
-             (LINK_X[1] + 5.0, TOP_Y, "LINK_B\n<- main J5", 1.0, S, 0, "left"),
+             (LINK_X[0] - 5.1, TOP_Y, "LINK_A\n<- main J4\n(on back)", 1.0, S, 0, "right"),
+             (LINK_X[1] + 5 * P + 5.1, TOP_Y, "LINK_B\n<- main J5\n(on back)", 1.0, S, 0, "left"),
              # display module outline label and SD header note
              (DX + 40.0, DY + 25.0, "2.8in SPI TFT (MSP2807)\nheader on the right ->", 1.5, S),
              (DX + 84.0 - SD_DX + 2.2, DY + 25.0 + SD_DY, "SD header\nsupport only\n(not wired)", 0.8, S, 0, "left")]
     # link terminals: signal name under every pin (rot 180 -> pin 1 is the right-most)
     for x1, pins in zip(LINK_X, (LINK_A, LINK_B)):
         for i in range(1, 7):
-            texts.append((x1 - P * (i - 1), TOP_Y + 3.4, pins[str(i)], 0.8, S, 90, "right"))
+            texts.append((x1 + P * (i - 1), TOP_Y + 3.4, pins[str(i)], 0.8, S, 90, "right"))
+            # same names on the back silkscreen, for wiring from behind (B.SilkS text is mirrored)
+            texts.append((x1 + P * (i - 1), TOP_Y + 3.4, pins[str(i)], 0.8, pcbnew.B_SilkS, 90, "left"))
+    texts += [(LINK_X[0] + 2.5 * P, TOP_Y + 12.0, "LINK_A -> main J4", 1.0, pcbnew.B_SilkS),
+              (LINK_X[1] + 2.5 * P, TOP_Y + 12.0, "LINK_B -> main J5", 1.0, pcbnew.B_SilkS)]
     # display header: the module's own pin names (pin 1 at the bottom)
     disp_pins = ["VCC", "GND", "CS", "RESET", "DC", "SDI", "SCK", "LED",
                  "SDO nc", "T_CLK nc", "T_CS nc", "T_DIN nc", "T_DO nc", "T_IRQ nc"]
