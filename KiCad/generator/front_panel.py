@@ -101,15 +101,32 @@ if __name__ == "__main__":
     kigen.write_fp_lib_table(OUT)
     kigen.write_sym_lib_table(OUT)
     kigen.write_schematic(d, base + ".kicad_sch")
-    texts = [(75.0, 84.0, "PEELING INSTRUMENT - FRONT PANEL  rev A", 1.5, pcbnew.F_SilkS),
-             (75.0, 16.5, "J1 LINK_A          J2 LINK_B", 1.2, pcbnew.F_SilkS)]
-    rects = []
-    for (ref, _, val, _), (cx, cy) in zip(KEYS, key_silk):
-        rects.append((cx - 9.525, cy - 9.525, cx + 9.525, cy + 9.525, pcbnew.F_SilkS))   # breakout outline
-        texts.append((cx, cy - 11.2, "%s  %s" % (ref, val.split("_")[0]), 1.0, pcbnew.F_SilkS))
+    S = pcbnew.F_SilkS
+    texts = [(75.0, 84.0, "PEELING INSTRUMENT - FRONT PANEL  rev A", 1.5, S),
+             # link terminal titles, beside each terminal
+             (39.5, 8.3, "LINK_A\n<- main J4", 1.0, S, 0, "right"),
+             (110.5, 8.3, "LINK_B\n<- main J5", 1.0, S, 0, "left"),
+             # display module outline label and SD header note
+             (DX + 40.0, DY + 25.0, "2.8in SPI TFT (MSP2807)\nheader on the right ->", 1.5, S),
+             (DX + 5.2, DY + 25.0, "SD header\nsupport only\n(not wired)", 0.8, S, 0, "left")]
+    # link terminals: signal name under every pin (rot 180 -> pin 1 is the right-most)
+    for x1, pins in ((70.5, LINK_A), (106.2, LINK_B)):
+        for i in range(1, 9):
+            texts.append((x1 - 3.81 * (i - 1), 11.4, pins[str(i)], 0.8, S, 90, "right"))
+    # display header: the module's own pin names (pin 1 at the bottom)
+    disp_pins = ["VCC", "GND", "CS", "RESET", "DC", "SDI", "SCK", "LED",
+                 "SDO nc", "T_CLK nc", "T_CS nc", "T_DIN nc", "T_DO nc", "T_IRQ nc"]
+    for i, lab in enumerate(disp_pins):
+        texts.append((DX + 84.0 - 1.9, DY + 41.51 - 2.54 * i, lab, 0.8, S, 0, "right"))
+    rects = [(DX, DY, DX + 86.0, DY + 50.0, S)]                                           # display module outline
+    funcs = {"SW1": "A  START/STOP", "SW2": "B  SET/HOME", "SW3": "X  + / CAL", "SW4": "Y  -"}
+    for (ref, net, val, _), (cx, cy) in zip(KEYS, key_silk):
+        rects.append((cx - 9.525, cy - 9.525, cx + 9.525, cy + 9.525, S))               # breakout outline
+        texts.append((cx, cy - 11.2, "%s  %s" % (ref, funcs[ref]), 1.0, S))
+        texts.append((cx, cy + 11.2, "2=GND  1=%s" % net, 0.8, S))
         for i, lab in enumerate("21-+"):                                                   # breakout pin labels
-            texts.append((cx - 5.4, cy - 3.81 + 2.54 * i, lab, 0.8, pcbnew.F_SilkS))
-            texts.append((cx + 5.4, cy - 3.81 + 2.54 * i, lab, 0.8, pcbnew.F_SilkS))
+            texts.append((cx - 5.4, cy - 3.81 + 2.54 * i, lab, 0.8, S))
+            texts.append((cx + 5.4, cy - 3.81 + 2.54 * i, lab, 0.8, S))
     kigen.build_pcb(d, base + ".kicad_pcb", (BOARD_W, BOARD_H), corner_radius=3.0,
                     silk_texts=texts, silk_rects=rects)
     print("written", base)
