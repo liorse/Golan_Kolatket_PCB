@@ -47,8 +47,10 @@ d.flag_pos, d.flag_group = (91.44, 53.34), "pwr"      # PWR_FLAGs for GND / +3V3
 # ---- Field terminals along the top edge (rot 180: pin 1 right-most, plug enters from the top)
 TOP_Y = 8.3
 TERMS = [("J1", "POWER_IN_6-7V", {"1": "+VIN", "2": "GND"}, 15.0, ["+VIN", "GND"], "pwr", (60.96, 50.8)),
-         ("J2", "DM542T", {"1": "STEP_PUL", "2": "STEP_DIR", "3": "STEP_ENA", "4": "GND"}, 42.0,
-          ["PUL+", "DIR+", "ENA+", "GND"], "step", (358.14, 50.8)),
+         # DM542T inputs in the driver's own order; every minus input gets its own GND return
+         ("J2", "DM542T", {"1": "STEP_PUL", "2": "GND", "3": "STEP_DIR", "4": "GND",
+                           "5": "STEP_ENA", "6": "GND"}, 42.0,
+          ["PUL+", "PUL-", "DIR+", "DIR-", "ENA+", "ENA-"], "step", (358.14, 50.8)),
          ("J3", "LIMIT_SW", {"1": "LIMIT_X", "2": "GND", "3": "LIMIT_Y", "4": "GND"}, 68.0,
           ["LIM X", "GND", "LIM Y", "GND"], "lim", (358.14, 91.44))]
 for ref, val, nets, x, _, grp, sch in TERMS:
@@ -124,7 +126,7 @@ d.texts.append((30.48, 172.72,
                 "heater connect to the MOSFET module's own screw terminals (VIN+/VIN-, OUT+/OUT-).\n"
                 "U3: the module's J1 row (TRIG/PWM x2, GND x2) plugs into a 1x4 female socket.\n"
                 "U1/U2/U3 are plug-in modules: their footprints are female sockets.\n"
-                "DM542T: PUL-/DIR-/ENA- go to GND at the driver; J2 carries PUL+, DIR+, ENA+ and GND."))
+                "DM542T: J2 = PUL+, PUL-, DIR+, DIR-, ENA+, ENA- (driver order); each minus pin is GND."))
 
 if __name__ == "__main__":
     import pcbnew

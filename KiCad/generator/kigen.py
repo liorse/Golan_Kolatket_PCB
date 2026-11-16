@@ -454,6 +454,13 @@ def write_project(design, path, netclasses, patterns):
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(proj, f, indent=2)
+    # Custom DRC rules: every GND pad is also routed with tracks by the autorouter,
+    # so a single thermal spoke into the GND pour is sufficient.
+    with open(os.path.splitext(path)[0] + ".kicad_dru", "w", encoding="utf-8", newline="\n") as f:
+        f.write("(version 1)\n"
+                "(rule \"GND thermal spokes\"\n"
+                "\t(condition \"A.NetName == 'GND'\")\n"
+                "\t(constraint min_resolved_spokes (min 1)))\n")
 
 
 # --------------------------------------------------------------------------
