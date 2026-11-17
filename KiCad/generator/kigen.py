@@ -189,6 +189,7 @@ class Design:
     def __init__(self, name, title, rev="A", company="", comments=()):
         self.name, self.title, self.rev, self.company = name, title, rev, company
         self.comments = list(comments)
+        self.date = ""
         self.parts = []
         self.texts = []          # schematic notes: (x, y, text)
         self.groups = []         # schematic blocks: [(key, title)]
@@ -400,7 +401,8 @@ def write_schematic(design, path):
                      ["effects", ["font", ["size", "1.524", "1.524"]], ["justify", "left", "top"]],
                      ["uuid", Q(uid())]])
 
-    tb = ["title_block", ["title", Q(design.title)], ["rev", Q(design.rev)], ["company", Q(design.company)]]
+    tb = ["title_block", ["title", Q(design.title)], ["date", Q(design.date)], ["rev", Q(design.rev)],
+          ["company", Q(design.company)]]
     for i, c in enumerate(design.comments[:9], 1):
         tb.append(["comment", str(i), Q(c)])
     doc = ["kicad_sch", ["version", "20250114"], ["generator", Q("eeschema")], ["generator_version", Q("9.0")],
@@ -467,7 +469,7 @@ def write_project(design, path, netclasses, patterns):
 # PCB builder (requires pcbnew)
 # --------------------------------------------------------------------------
 def build_pcb(design, path, outline, origin=(100.0, 50.0), zones=True, corner_radius=0.0,
-              silk_texts=(), keepouts=(), silk_rects=()):
+              silk_texts=(), keepouts=(), silk_rects=(), silk_logos=()):
     import pcbnew
     mm = pcbnew.FromMM
     V = lambda x, y: pcbnew.VECTOR2I(mm(origin[0] + x), mm(origin[1] + y))
@@ -475,7 +477,7 @@ def build_pcb(design, path, outline, origin=(100.0, 50.0), zones=True, corner_ra
     board = pcbnew.NewBoard(path)
     board.SetCopperLayerCount(2)
     tb = board.GetTitleBlock()
-    tb.SetTitle(design.title); tb.SetRevision(design.rev); tb.SetCompany(design.company)
+    tb.SetTitle(design.title); tb.SetDate(design.date); tb.SetRevision(design.rev); tb.SetCompany(design.company)
     for i, c in enumerate(design.comments[:9]):
         tb.SetComment(i, c)
 
@@ -573,6 +575,9 @@ def build_pcb(design, path, outline, origin=(100.0, 50.0), zones=True, corner_ra
         r.SetStart(V(x0, y0)); r.SetEnd(V(x1, y1)); r.SetLayer(layer); r.SetWidth(mm(0.12))
         board.Add(r)
 
+    for (png, lx, ly, lh, layer) in silk_logos:
+        add_silk_logo(board, png, V(lx, ly), lh, layer)
+
     for (x0, y0, x1, y1, layers) in keepouts:
         z = pcbnew.ZONE(board)
         z.SetIsRuleArea(True)
@@ -608,3 +613,47 @@ def fill_and_save(path):
     board = pcbnew.LoadBoard(path)
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     board.Save(path)
+
+
+def add_silk_logo(board, png, centre, height, layer, px=0.02, grow=1):
+    """Turn a black-on-white bitmap into filled silkscreen polygons, `height` mm tall,
+    centred on `centre`. Rasterised on a `px` mm grid and dilated by `grow` pixels so
+    hairlines stay printable (>= ~0.15 mm). Mirrored automatically on B.SilkS."""
+    import pcbnew
+    from PIL import Image, ImageFilter
+    mm = pcbnew.FromMM
+    im = Image.open(png).convert("L")
+    H = int(round(height / px)); W = int(round(H * im.width / im.height))
+    im = im.resize((W, H), Image.LANCZOS).point(lambda v: 255 if v < 128 else 0)
+    if grow:
+        im = im.filter(ImageFilter.MaxFilter(2 * grow + 1))
+    if layer == pcbnew.B_SilkS:
+        im = im.transpose(Image.FLIP_LEFT_RIGHT)
+    data = im.load()
+    x0 = centre.x - mm(W * px / 2); y0 = centre.y - mm(H * px / 2)
+    ps = pcbnew.SHAPE_POLY_SET()
+    eps = mm(0.002)
+    for j in range(H):
+        i = 0
+        while i < W:
+            if data[i, j]:
+                k = i
+                while k < W and data[k, j]:
+                    k += 1
+                xa, xb = x0 + mm(i * px) - eps, x0 + mm(k * px) + eps
+                ya, yb = y0 + mm(j * px) - eps, y0 + mm((j + 1) * px) + eps
+                o = ps.NewOutline()
+                for (x, y) in ((xa, ya), (xb, ya), (xb, yb), (xa, yb)):
+                    ps.Append(int(x), int(y), o)
+                i = k
+            else:
+                i += 1
+    ps.Simplify()
+    ps.Fracture()
+    for n in range(ps.OutlineCount()):
+        one = pcbnew.SHAPE_POLY_SET()
+        one.AddOutline(ps.Outline(n))
+        sh = pcbnew.PCB_SHAPE(board)
+        sh.SetShape(pcbnew.SHAPE_T_POLY)
+        sh.SetPolyShape(one); sh.SetFilled(True); sh.SetWidth(0); sh.SetLayer(layer)
+        board.Add(sh)
