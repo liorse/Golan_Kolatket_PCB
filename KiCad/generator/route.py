@@ -47,10 +47,20 @@ def stitch_gnd(board, pitch=7.5, via_d=0.8, drill=0.4, clearance=0.35, edge=2.0)
     x0, y0, x1, y1 = bb.GetX() + mm(edge), bb.GetY() + mm(edge), bb.GetRight() - mm(edge), bb.GetBottom() - mm(edge)
     obstacles = [p for p in board.GetPads()] + [t for t in board.GetTracks()]
     keep = mm(via_d / 2 + clearance)
+    # keep vias off silkscreen text and logos so the legend stays clean
+    silk = []
+    for g in board.GetDrawings():
+        if g.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS) and (
+                isinstance(g, pcbnew.PCB_TEXT) or g.GetShape() == pcbnew.SHAPE_T_POLY):
+            bb = g.GetBoundingBox()
+            m = mm(via_d / 2 + 0.2)
+            silk.append((bb.GetX() - m, bb.GetY() - m, bb.GetRight() + m, bb.GetBottom() + m))
 
     def clear(pt):
         seg = pcbnew.SEG(pt, pt)
         if not (x0 <= pt.x <= x1 and y0 <= pt.y <= y1):
+            return False
+        if any(a <= pt.x <= c and b <= pt.y <= d for (a, b, c, d) in silk):
             return False
         for o in obstacles:
             for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
