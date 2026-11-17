@@ -53,7 +53,7 @@ d.add("U1", "Peeling:TFT_2.8in_SPI_MSP2807", "TFT_2.8in_SPI",
 #   SD column ~78.35 mm from the 14-pin column: at 31 pitches (78.74) the pin tips landed ~0.4 mm short of the pad\n#   centres toward the display centre on the 1:1 print (photo IMG_8481); not on the 2.54 grid
 #   4 holes between the bottom 14-pin pin (VCC) and the first SD pin -> 5 pitches = 12.7 mm
 # i.e. the SD header is centred on the 14-pin header (rows 6-9 counted from VCC).
-SD_DX, SD_DY = 78.35, 0.37         # +0.37: pins sat 0.37 mm below the pad centres on the 1:1 print (IMG_8484)         # SD header centre relative to the 14-pin header centre
+SD_DX, SD_DY = 78.0, 0.20          # measured: 78.0 mm column-to-column, 12.5 mm display pin 1 to J4 pin 4
 d.add("J4", "Connector_Generic:Conn_01x04", "TFT_SD_support",
       "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical", {},
       pos=(DX + 84.0 - SD_DX, DY + 25.0 + SD_DY - 3.81), rot=0, sch=(187.96, 58.42), group="disp",
@@ -75,8 +75,8 @@ SOCK4 = "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical"
 # PCB, bottom edge of the lower breakouts = bottom of the display PCB (breakouts are 19.05 mm square).
 KEY_HALF = 19.05 / 2
 KEY_TOP_Y, KEY_BOT_Y = DY + KEY_HALF, DY + 50.0 - KEY_HALF
-KEYS = [("SW1", "BTN_A", "A_START_STOP", (18.0, KEY_TOP_Y)),
-        ("SW2", "BTN_B", "B_SET_HOME", (18.0, KEY_BOT_Y)),
+KEYS = [("SW1", "BTN_A", "A_START_STOP", (19.0, KEY_TOP_Y)),
+        ("SW2", "BTN_B", "B_SET_HOME", (19.0, KEY_BOT_Y)),
         ("SW3", "BTN_X", "X_PLUS_CAL", (135.0, KEY_TOP_Y)),
         ("SW4", "BTN_Y", "Y_MINUS", (135.0, KEY_BOT_Y))]
 key_silk = []
