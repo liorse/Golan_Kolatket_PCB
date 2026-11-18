@@ -12,10 +12,19 @@ import kigen
 import peeling_lib
 from kigen import Q, dump_sexpr
 
-PROJ_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Main_Board_Discrete"))
-LIB_DIR = os.path.join(PROJ_DIR, "lib")
-SYM_FILE = os.path.join(LIB_DIR, "Discrete.kicad_sym")
-FP_DIR_OUT = os.path.join(LIB_DIR, "Discrete.pretty")
+KICAD_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+
+def set_project(folder):
+    """Point the library writer at a project folder (each board variant has its own copy)."""
+    global PROJ_DIR, LIB_DIR, SYM_FILE, FP_DIR_OUT
+    PROJ_DIR = os.path.join(KICAD_DIR, folder)
+    LIB_DIR = os.path.join(PROJ_DIR, "lib")
+    SYM_FILE = os.path.join(LIB_DIR, "Discrete.kicad_sym")
+    FP_DIR_OUT = os.path.join(LIB_DIR, "Discrete.pretty")
+
+
+set_project("Main_Board_Discrete")
 
 SYMBOLS = [
     ("74AHCT125_1U", "U",
