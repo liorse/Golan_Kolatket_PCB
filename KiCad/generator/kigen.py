@@ -368,7 +368,9 @@ def write_schematic(design, path):
 
     fx, fy = getattr(design, "flag_pos", (30.48, 30.48))
     fgroup = getattr(design, "flag_group", "_misc")
-    for i, net in enumerate(sorted(n for n in POWER_SYMBOLS if any(net == n for p in design.parts for net in p.nets.values()))):
+    no_flag = set(getattr(design, "no_flag", ()))     # nets already driven by a power output pin
+    for i, net in enumerate(sorted(n for n in POWER_SYMBOLS if n not in no_flag and
+                                   any(net == n for p in design.parts for net in p.nets.values()))):
         x, y = _snap(fx + 15.24 * i), _snap(fy)
         power_symbol(net, x, y, 0, fgroup)
         frot = 0 if net == "GND" else 180
@@ -491,6 +493,13 @@ def build_pcb(design, path, outline, origin=(100.0, 50.0), zones=True, corner_ra
             if not p.nets.get(num):
                 label = ("%s-%s-Pad%s" % (p.ref, name, num)) if name not in ("~", "") else ("%s-Pad%s" % (p.ref, num))
                 p._pad_nets[num] = "unconnected-(%s)" % label.replace("/", "{slash}")
+        # stacked symbol pins, e.g. "[1,15,38,39]" or "[5-8]": one net on every listed pad
+        for num, n in list(p._pad_nets.items()):
+            if num.startswith("[") and num.endswith("]"):
+                for tok in num[1:-1].split(","):
+                    a, _, b = tok.partition("-")
+                    for k in (range(int(a), int(b) + 1) if b else [a]):
+                        p._pad_nets.setdefault(str(k), n)
 
     nets = {}
     all_nets = sorted({n for p in design.parts for n in p._pad_nets.values() if n})
