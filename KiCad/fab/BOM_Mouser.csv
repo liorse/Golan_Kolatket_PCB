@@ -1,0 +1,12 @@
+Manufacturer,Manufacturer Part Number,Mouser Part Number,Description,Qty per set,Main board,Front panel,Notes
+Phoenix Contact,1757284,651-1757284,"MSTBA 2,5/6-G-5,08 PCB header, 6-pos, 5.08 mm, right angle",5,"J2 (DM542T), J4 (LINK_A), J5 (LINK_B)","J1 (LINK_A), J2 (LINK_B)",
+Phoenix Contact,1757268,651-1757268,"MSTBA 2,5/4-G-5,08 PCB header, 4-pos, 5.08 mm, right angle",1,J3 (LIMIT_SW),,
+Phoenix Contact,1757242,651-1757242,"MSTBA 2,5/2-G-5,08 PCB header, 2-pos, 5.08 mm, right angle",1,J1 (POWER_IN),,
+Phoenix Contact,1757051,651-1757051,"MSTB 2,5/6-ST-5,08 plug, 6-pos, screw, 5.08 mm",5,,,"4 for the two link cables (both ends), 1 for the DM542T cable"
+Phoenix Contact,1757035,651-1757035,"MSTB 2,5/4-ST-5,08 plug, 4-pos, screw, 5.08 mm",1,,,Limit-switch cable
+Phoenix Contact,1757019,651-1757019,"MSTB 2,5/2-ST-5,08 plug, 2-pos, screw, 5.08 mm",1,,,Power-input cable
+Sullins Connector Solutions,PPTC151LFBN-RC,,"Female socket 1x15, 2.54 mm, through hole, tin",2,U1 (ESP32 DevKit),,
+Sullins Connector Solutions,PPTC141LFBN-RC,,"Female socket 1x14, 2.54 mm, through hole, tin",1,,U1 (2.8in TFT),
+Sullins Connector Solutions,PPTC091LFBN-RC,,"Female socket 1x09, 2.54 mm, through hole, tin",1,U2 (MAX31856),,
+Sullins Connector Solutions,PPTC041LFBN-RC,,"Female socket 1x04, 2.54 mm, through hole, tin",10,U3 (HW-517 MOSFET),"J4 (TFT SD support), J5-J12 (key breakouts)",
+Sullins Connector Solutions,PPTC021LFBN-RC,,"Female socket 1x02, 2.54 mm, through hole, tin",1,J10 (EN boot cap),,
