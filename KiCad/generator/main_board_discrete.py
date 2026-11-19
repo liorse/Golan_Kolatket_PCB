@@ -77,7 +77,7 @@ LCSC = {
     "SWPA5040S100MT": "C84608", "AMS1117-3.3": "C6186", "SN74AHCT125DR": "C155176",
     "AOD4184A": "C99124", "SS54C": "C16103", "SS34": "C8678", "B5819W": "C8598",
     "SMBJ26CA": "C83332", "BLM21PG221SN1D": "C85840", "1757242": "C90074", "1757268": "C90076",
-    "1757284": "C457198", "C100uF 50V": "C2836439", "R13k": "C22797", "R100R": "C22775", "S1206-S-3.0A": "C553930", "MMBT3904": "C20526", "TS-1187A-B-A-B": "C318884",
+    "1757284": "C457198", "C100uF 50V": "C2836439", "R13k": "C22797", "R6.8k": "C23212", "R100R": "C22775", "S1206-S-3.0A": "C553930", "MMBT3904": "C20526", "TS-1187A-B-A-B": "C318884",
     "KT-0603R": "C2286", "KT-0805G": "C2297", "TMC2226-SA-T": "C705366",
     "R5.1k": "C23186", "R10k": "C25804", "R1k": "C21190", "R22R": "C23345", "R47R": "C23182",
     "R100k": "C25803", "R120k": "C25808", "R30k": "C22984", "R24k": "C23352", "R4.7k": "C23162",
@@ -293,11 +293,12 @@ C("C65", "2.2uF", "GND", "TMC_5V", (LX, 29.0), 0, "step")
 # right column (pins 15-28), top to bottom: BRA sense, VS cap, VREF divider, VCC_IO cap, PDN strap
 R("R60", "0.15R", "TMC_BRA", "GND", (RX + 1.2, 20.6), 0, "step", fp=R1206)
 C("C61", "100nF", "VS_TMC", "GND", (RX, 23.0), 0, "step")
-# VREF from 3V3: 10k / 13k -> 1.87 V -> 1.01 A RMS with 0.15 ohm sense resistors
+# VREF from 3V3: 10k / 6.8k -> 1.34 V -> 0.72 A RMS / 1.02 A peak with 0.15 ohm sense resistors
+# (matches the DM542T setting SW1-3 ON: 1.00 A peak / 0.71 A RMS; 13k would give 1.0 A RMS)
 # (I_RMS = 0.325 V / (Rs + 0.02) / sqrt(2) * VREF / 2.5 V, TMC2226 datasheet sec. 9).
 # Other current: R63 = 10k * V / (3.3 - V) with V = 2.5 V * I_RMS / 1.354 A
 R("R62", "10k", "TMC_VREF", "+3V3", (RX, 24.7), 0, "step")
-R("R63", "13k", "TMC_VREF", "GND", (RX, 26.3), 0, "step")
+R("R63", "6.8k", "TMC_VREF", "GND", (RX, 26.3), 0, "step")
 C("C66", "100nF", "+3V3", "GND", (RX, 27.9), 0, "step")
 R("R67", "10k", "TMC_PDN", "GND", (RX, 29.5), 0, "step")
 # Straps below the chip: MS1 = GND, MS2 = 3V3 -> 1/64 (interpolated to 1/256); PDN = GND ->
